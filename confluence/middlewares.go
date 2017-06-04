@@ -1,8 +1,11 @@
 package confluence
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -17,10 +20,28 @@ func withTorrentContext(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		var ih metainfo.Hash
-		err := ih.FromHexString(q.Get("ih"))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+		hash := q.Get("ih")
+		// if no hash, then check body for torrent file
+		if hash == "" {
+			var buf bytes.Buffer
+			tee := io.TeeReader(r.Body, &buf)
+
+			mi, err := extractMetaInfo(tee)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("error decoding body: %s", err), http.StatusBadRequest)
+				return
+			}
+
+			ih = mi.HashInfoBytes()
+
+			// reset body for use elsewhere
+			r.Body = ioutil.NopCloser(&buf)
+		} else {
+			err := ih.FromHexString(hash)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 		// TODO: Create abstraction for not refcounting Torrents.
 		var ref *refclose.Ref

@@ -3,6 +3,7 @@ package confluence
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 
@@ -81,8 +82,7 @@ func fileStateHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func metainfoHandler(w http.ResponseWriter, r *http.Request) {
-	var mi metainfo.MetaInfo
-	err := bencode.NewDecoder(r.Body).Decode(&mi)
+	mi, err := extractMetaInfo(r.Body)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error decoding body: %s", err), http.StatusBadRequest)
 		return
@@ -91,4 +91,11 @@ func metainfoHandler(w http.ResponseWriter, r *http.Request) {
 	t.AddTrackers(mi.UpvertedAnnounceList())
 	t.SetInfoBytes(mi.InfoBytes)
 	saveTorrentFile(t)
+	hash := t.InfoHash().HexString()
+	w.Write([]byte(hash))
+}
+
+func extractMetaInfo(body io.Reader) (mi metainfo.MetaInfo, err error) {
+	err = bencode.NewDecoder(body).Decode(&mi)
+	return
 }
